@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using ASP.NETCoreIdentityCustom.Areas.Identity.Data;
@@ -110,9 +111,38 @@ namespace ASP.NETCoreIdentityCustom.Areas.Identity.Pages.Account
 
             if (ModelState.IsValid)
             {
+
                 // This doesn't count login failures towards account lockout
                 // To enable password failures to trigger account lockout, set lockoutOnFailure: true
-                var result = await _signInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+                var user = await _signInManager.UserManager.FindByNameAsync(Input.Email);
+                if (user == null)
+                {
+                    ModelState.AddModelError(string.Empty, "Invalid login attempt.");
+                    return Page();
+                }
+
+                var result = await _signInManager.CheckPasswordSignInAsync(user, Input.Password, false);
+                if (result.Succeeded)
+                {
+                    var claims = new List<Claim>
+                    { 
+                        new Claim("amr", "pwd"),
+                    };
+
+                    var roles = await _signInManager.UserManager.GetRolesAsync(user);
+
+                    if (roles.Any())
+                    {
+                        //"Manager,User"
+                        var roleClaim = string.Join(",", roles);
+                        claims.Add(new Claim("Roles", roleClaim));
+                    }
+
+                    await _signInManager.SignInWithClaimsAsync(user, Input.RememberMe, claims);
+
+                    _logger.LogInformation("User logged in.");
+                    return LocalRedirect(returnUrl);
+                }
                 if (result.Succeeded)
                 {
                     _logger.LogInformation("User logged in.");
